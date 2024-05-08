@@ -15,11 +15,11 @@ class NeuralNetwork(nn.Module):
         super(NeuralNetwork, self).__init__()
         
         self.conv_layers = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.Conv2d( 3,  32, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
             
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.Conv2d(32,  64, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
             
@@ -33,7 +33,6 @@ class NeuralNetwork(nn.Module):
         self.full_layers = nn.Sequential(
             nn.Linear(128 * 4 * 4, 256),
             nn.ReLU(),
-            nn.Dropout(p=0.3),
             nn.Linear(256, 10),
         )
 
@@ -46,6 +45,9 @@ class NeuralNetwork(nn.Module):
 
 def train_and_test(model, train_set, test_set, num_batches, loss_fn, optimizer, num_epochs, device):
     
+    assert len(train_set) % num_batches == 0
+    assert len(test_set ) % num_batches == 0
+    
     train_batch_size = len(train_set) // num_batches
     test_batch_size  = len(test_set)  // num_batches
 
@@ -54,6 +56,7 @@ def train_and_test(model, train_set, test_set, num_batches, loss_fn, optimizer, 
     
     train_losses = []
     test_losses  = []
+    accuracies   = []
     
     for epoch in range(num_epochs):
     
@@ -62,14 +65,18 @@ def train_and_test(model, train_set, test_set, num_batches, loss_fn, optimizer, 
             model.eval()
             X, y = test_batch
             X, y = X.to(device), y.to(device)
+            
             with torch.no_grad():
                 pred = model(X)
                 loss = loss_fn(pred, y)
                 test_losses.append(loss.item())
+                num_correct = (pred.argmax(1) == y).type(torch.float).sum().item()
+                accuracies.append(num_correct / test_batch_size)
             
             model.train()
             X, y = train_batch
             X, y = X.to(device), y.to(device)
+            
             pred = model(X)
             loss = loss_fn(pred, y)
             train_losses.append(loss.item())
@@ -82,7 +89,7 @@ def train_and_test(model, train_set, test_set, num_batches, loss_fn, optimizer, 
     
     num_datapoints = num_batches * num_epochs
     
-    return train_losses, test_losses, num_epochs, num_batches, num_datapoints
+    return train_losses, test_losses, accuracies, num_epochs, num_batches, num_datapoints
 
 
 
@@ -94,30 +101,44 @@ def exp_smooth(nums, alpha=0.05):
 
 
 
-def plot_losses(train_losses, test_losses, num_epochs, num_batches, num_datapoints):
+def plot_metrics(train_losses, test_losses, accuracies, num_epochs, num_batches, num_datapoints):
 
     general_gap = [a-b for (a,b) in zip(test_losses, train_losses)]
     
     smoothed_train_losses = exp_smooth(train_losses)
     smoothed_test_losses  = exp_smooth(test_losses)
     smoothed_general_gap  = exp_smooth(general_gap)
+    smoothed_accuracies   = exp_smooth(accuracies)
     
     epochs = [v/num_batches for v in range(1, num_datapoints+1)]
     
-    plt.plot(epochs, train_losses, color='tab:blue'  , alpha=0.2)
-    plt.plot(epochs, test_losses , color='tab:green' , alpha=0.2)
-    #plt.plot(epochs, general_gap , color='tab:orange', alpha=0.2)
+    fig, ax1 = plt.subplots()
     
-    plt.plot(epochs, smoothed_train_losses, color='tab:blue'  , label='Training loss')
-    plt.plot(epochs, smoothed_test_losses , color='tab:green' , label='Testing loss')
-    plt.plot(epochs, smoothed_general_gap , color='tab:orange', label='Generalization gap')
+    l1, = ax1.plot(epochs, train_losses, color='tab:blue'  , alpha=0.15)
+    l2, = ax1.plot(epochs, test_losses , color='tab:green' , alpha=0.15)
+    #l3, = ax1.plot(epochs, general_gap , color='tab:orange', alpha=0.15)
+    
+    l4, = ax1.plot(epochs, smoothed_train_losses, color='tab:blue'  , label='Training loss')
+    l5, = ax1.plot(epochs, smoothed_test_losses , color='tab:green' , label='Testing loss')
+    l6, = ax1.plot(epochs, smoothed_general_gap , color='tab:orange', label='Generalization gap')
+    
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
+    ax1.set_ylim((0,3))
+    
+    ax2 = ax1.twinx()
+    l7, = ax2.plot(epochs, smoothed_accuracies  , color='tab:purple', label='Accuracy')
+    
+    ax2.set_ylabel('Accuracy score')
+    ax2.set_ylim((0,1))
     
     plt.xlim((0,num_epochs))
-    plt.ylim((0,3))
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
     plt.grid(True)
-    plt.legend()
+    
+    lines  = [l4, l5, l6, l7]
+    labels = [line.get_label() for line in lines]
+    plt.legend(lines, labels)
+    
     plt.show()
     
 
@@ -139,9 +160,9 @@ if __name__ == "__main__":
     loss_fn   = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
     
-    loss_data = train_and_test(model, train_set, test_set, 50, loss_fn, optimizer, 50, device)
+    metrics = train_and_test(model, train_set, test_set, 50, loss_fn, optimizer, 50, device)
     
-    plot_losses(*loss_data)
+    plot_metrics(*metrics)
 
 
 
