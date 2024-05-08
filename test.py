@@ -31,11 +31,10 @@ class NeuralNetwork(nn.Module):
         self.flatten = nn.Flatten()
         
         self.full_layers = nn.Sequential(
-            nn.Linear(128 * 4 * 4, 512),
+            nn.Linear(128 * 4 * 4, 256),
             nn.ReLU(),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Linear(512, 10)
+            nn.Dropout(p=0.3),
+            nn.Linear(256, 10),
         )
 
     def forward(self, x):
@@ -45,88 +44,104 @@ class NeuralNetwork(nn.Module):
 
 
 
-def train(dataloader, model, loss_fn, optimizer):
-
-    model.train()
-    running_loss = 0.
-    losses = []
+def train_and_test(model, train_set, test_set, num_batches, loss_fn, optimizer, num_epochs, device):
     
-    for batch_num, (X, y) in enumerate(dataloader, 1):
-        X, y = X.to(device), y.to(device)
+    train_batch_size = len(train_set) // num_batches
+    test_batch_size  = len(test_set)  // num_batches
 
-        pred = model(X)
-        loss = loss_fn(pred, y)
-
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-
-        losses.append(loss.item())
+    train_loader = DataLoader(train_set, batch_size=train_batch_size, shuffle=True)
+    test_loader  = DataLoader(test_set , batch_size=test_batch_size , shuffle=True)
     
-    return losses
-
-
-def test(dataloader, model, loss_fn):
-
-    model.eval()
-    size = len(dataloader.dataset)
-    num_batches = len(dataloader)
+    train_losses = []
+    test_losses  = []
     
-    test_loss, correct = 0, 0
-    with torch.no_grad():
-        for X, y in dataloader:
+    for epoch in range(num_epochs):
+    
+        for train_batch, test_batch in zip(train_loader, test_loader):
+            
+            model.eval()
+            X, y = test_batch
+            X, y = X.to(device), y.to(device)
+            with torch.no_grad():
+                pred = model(X)
+                loss = loss_fn(pred, y)
+                test_losses.append(loss.item())
+            
+            model.train()
+            X, y = train_batch
             X, y = X.to(device), y.to(device)
             pred = model(X)
-            test_loss += loss_fn(pred, y).item()
-            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+            loss = loss_fn(pred, y)
+            train_losses.append(loss.item())
             
-    test_loss /= num_batches
-    correct /= size
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
-    return (test_loss, correct)
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+        
+        print(f'Epoch #{epoch+1} done')
+    
+    num_datapoints = num_batches * num_epochs
+    
+    return train_losses, test_losses, num_epochs, num_batches, num_datapoints
+
+
+
+def exp_smooth(nums, alpha=0.05):
+    smoothed = [nums[0]]
+    for i in range(1,len(nums)):
+        smoothed.append(nums[i]*alpha + smoothed[-1]*(1-alpha))
+    return smoothed
+
+
+
+def plot_losses(train_losses, test_losses, num_epochs, num_batches, num_datapoints):
+
+    general_gap = [a-b for (a,b) in zip(test_losses, train_losses)]
+    
+    smoothed_train_losses = exp_smooth(train_losses)
+    smoothed_test_losses  = exp_smooth(test_losses)
+    smoothed_general_gap  = exp_smooth(general_gap)
+    
+    epochs = [v/num_batches for v in range(1, num_datapoints+1)]
+    
+    plt.plot(epochs, train_losses, color='tab:blue'  , alpha=0.2)
+    plt.plot(epochs, test_losses , color='tab:green' , alpha=0.2)
+    #plt.plot(epochs, general_gap , color='tab:orange', alpha=0.2)
+    
+    plt.plot(epochs, smoothed_train_losses, color='tab:blue'  , label='Training loss')
+    plt.plot(epochs, smoothed_test_losses , color='tab:green' , label='Testing loss')
+    plt.plot(epochs, smoothed_general_gap , color='tab:orange', label='Generalization gap')
+    
+    plt.xlim((0,num_epochs))
+    plt.ylim((0,3))
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+    
+
 
 
 if __name__ == "__main__":
-
-    train_set = datasets.CIFAR10(root='data', train=True , download=True, transform=ToTensor())
-    test_set  = datasets.CIFAR10(root='data', train=False, download=True, transform=ToTensor())
     
-    t0 = time.time()
-
-    train_loader = DataLoader(train_set, batch_size=1000, shuffle=True)
-    test_loader  = DataLoader(test_set , batch_size=1000, shuffle=True)
-    
-    print('Loader creation time:',time.time() - t0)
-
-    device = (
-        "cuda"
-        if torch.cuda.is_available()
-        else "mps"
-        if torch.backends.mps.is_available()
-        else "cpu"
-    )
+    if   torch.cuda.is_available():         device='cuda'
+    elif torch.backends.mps.is_available(): device='mps'
+    else:                                   device='cpu'
 
     print(f"Device: {device}")
 
     model = NeuralNetwork().to(device)
-    print(model)
+
+    train_set = datasets.CIFAR10(root='data', train=True , download=True, transform=ToTensor())
+    test_set  = datasets.CIFAR10(root='data', train=False, download=True, transform=ToTensor())
     
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn   = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
     
-    losses = []
-    test_losses = []
-    t0 = time.time()
-    for _ in range(20):
-        losses += train(train_loader, model, loss_fn, optimizer)
-        test_losses.append(test(test_loader, model, loss_fn)[0])
-        print(time.time()-t0)
-        t0 = time.time()
+    loss_data = train_and_test(model, train_set, test_set, 50, loss_fn, optimizer, 50, device)
     
-    plt.plot(range(len(losses)), losses)
-    plt.plot(range(50,50*(len(test_losses)+1),50), test_losses)
-    plt.grid(True)
-    plt.show()
+    plot_losses(*loss_data)
 
 
 
