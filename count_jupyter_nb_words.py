@@ -27,9 +27,9 @@ def count_words_in_markdown(notebook_file):
                 continue
             else:
                 # Remove frmatting that should not contribute towards the word count.
-                cell_content = re.sub('\<(lt)\>\$[^\$]+\$','',cell_content) # Remove in-line Latex (flagged by <lt>$.$)
-                cell_content = re.sub('\<(lt)\>(\$){2}[^\$]+(\$){2}','',cell_content) # Remove newline Latex (flagged by <lt>$$.$$)
-                cell_content = re.sub('\<(figure)\>.*\<(\/figure)\>','',cell_content) # Remove figures (flagged by <figure>.</figure>)
+                cell_content = re.sub('<(lt)>$[^$]+$','',cell_content) # Remove in-line Latex (flagged by <lt>$.$)
+                cell_content = re.sub('<(lt)>($){2}[^$]+($){2}','',cell_content) # Remove newline Latex (flagged by <lt>$$.$$)
+                cell_content = re.sub('<(figure)>.*<(/figure)>','',cell_content) # Remove figures (flagged by <figure>.</figure>)
                 # Count words remaining in this cell
                 cell_count = len(cell_content.split())
                 # Update word count
