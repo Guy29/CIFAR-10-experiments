@@ -1,107 +1,139 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from   torch                  import nn
+from   torch.utils.data       import DataLoader
+from   torchvision            import datasets
+from   torchvision.transforms import ToTensor
 
-class Net(nn.Module):
+import matplotlib.pyplot      as plt
+import time
+
+
+class NeuralNetwork(nn.Module):
+
     def __init__(self):
-        super(Net, self).__init__()
-        # Input channels = 3 (for RGB images), output channels = 32
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(32)  # Batch normalization for 32 output channels
 
-        # Input channels = 32, output channels = 64
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)  # Batch normalization for 64 output channels
-
-        # Input channels = 64, output channels = 128
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
-        self.bn3 = nn.BatchNorm2d(128)  # Batch normalization for 128 output channels
-
-        # Max pooling
-        self.pool = nn.MaxPool2d(2, 2)
-        # Fully connected layer, 128 * 8 * 8 input features, 512 outputs
-        self.fc1 = nn.Linear(128 * 8 * 8, 512)
-        # 512 inputs, 10 outputs (for the 10 classes)
-        self.fc2 = nn.Linear(512, 10)
+        super(NeuralNetwork, self).__init__()
+        
+        self.conv_layers = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+        )
+        
+        self.flatten = nn.Flatten()
+        
+        self.full_layers = nn.Sequential(
+            nn.Linear(128 * 4 * 4, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Linear(512, 10)
+        )
 
     def forward(self, x):
-        # Apply convolutional layers followed by batch normalization, ReLU activation and max pooling
-        x = self.pool(F.relu(self.bn1(self.conv1(x))))
-        x = self.pool(F.relu(self.bn2(self.conv2(x))))
-        x = F.relu(self.bn3(self.conv3(x)))
-        # Flatten the output from the conv layers to feed into the fully connected layer
-        x = x.view(-1, 128 * 8 * 8)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
-
-
-if __name__ == '__main__':
-
-
-    # Create an instance of the network
-    net = Net().to('cuda')
-    print(net)
+        logits = self.full_layers(self.flatten(self.conv_layers(x)))
+        return logits
 
 
 
 
-    import torch
-    import torchvision
-    import torchvision.transforms as transforms
+def train(dataloader, model, loss_fn, optimizer):
 
-    # Transform the data to torch tensors and normalize it 
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize the image to [-1, 1]
-    ])
+    model.train()
+    running_loss = 0.
+    losses = []
+    
+    for batch_num, (X, y) in enumerate(dataloader, 1):
+        X, y = X.to(device), y.to(device)
 
-    # Load the training and test sets
-    trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
-                                            download=True, transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=1,
-                                              shuffle=True, num_workers=2)
+        pred = model(X)
+        loss = loss_fn(pred, y)
 
-    testset = torchvision.datasets.CIFAR10(root='./data', train=False,
-                                           download=True, transform=transform)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=1,
-                                             shuffle=False, num_workers=2)
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
 
-    # Classes in CIFAR-10
-    classes = ('plane', 'car', 'bird', 'cat',
-               'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+        losses.append(loss.item())
+    
+    return losses
 
 
+def test(dataloader, model, loss_fn):
+
+    model.eval()
+    size = len(dataloader.dataset)
+    num_batches = len(dataloader)
+    
+    test_loss, correct = 0, 0
+    with torch.no_grad():
+        for X, y in dataloader:
+            X, y = X.to(device), y.to(device)
+            pred = model(X)
+            test_loss += loss_fn(pred, y).item()
+            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+            
+    test_loss /= num_batches
+    correct /= size
+    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+    return (test_loss, correct)
 
 
-    import torch.optim as optim
+if __name__ == "__main__":
 
-    net = Net()  # Assume Net is the class we've defined earlier
+    train_set = datasets.CIFAR10(root='data', train=True , download=True, transform=ToTensor())
+    test_set  = datasets.CIFAR10(root='data', train=False, download=True, transform=ToTensor())
+    
+    t0 = time.time()
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    train_loader = DataLoader(train_set, batch_size=1000, shuffle=True)
+    test_loader  = DataLoader(test_set , batch_size=1000, shuffle=True)
+    
+    print('Loader creation time:',time.time() - t0)
 
-    for epoch in range(10):  # loop over the dataset multiple times
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
 
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            # get the inputs; data is a list of [inputs, labels]
-            inputs, labels = data
+    print(f"Device: {device}")
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
+    model = NeuralNetwork().to(device)
+    print(model)
+    
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+    
+    losses = []
+    test_losses = []
+    t0 = time.time()
+    for _ in range(20):
+        losses += train(train_loader, model, loss_fn, optimizer)
+        test_losses.append(test(test_loader, model, loss_fn)[0])
+        print(time.time()-t0)
+        t0 = time.time()
+    
+    plt.plot(range(len(losses)), losses)
+    plt.plot(range(50,50*(len(test_losses)+1),50), test_losses)
+    plt.grid(True)
+    plt.show()
 
-            # forward + backward + optimize
-            outputs = net(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
 
-            # print statistics
-            running_loss += loss.item()
-            if i % 200 == 199:    # print every 200 mini-batches
-                print('[%d, %5d] loss: %.3f' %
-                      (epoch + 1, i + 1, running_loss / 200))
-                running_loss = 0.0
 
-    print('Finished Training')
+# conda create -n nn_env python=3.8
+# conda activate nn_env
+# pip3 install torch==2.3.0+cu121 torchvision==0.18+cu121 matplotlib -f https://download.pytorch.org/whl/cu121/torch_stable.html
+# conda install ipykernel
+# python -m ipykernel install --user --name=nn_env --display-name="Neural Networks"
+# conda install jupyterlab
+# jupyter lab
