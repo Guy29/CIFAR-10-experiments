@@ -29,8 +29,8 @@
      inkscape:document-units="mm"
      showgrid="false"
      inkscape:zoom="1.28"
-     inkscape:cx="367.96875"
-     inkscape:cy="135.54688"
+     inkscape:cx="294.14062"
+     inkscape:cy="136.32812"
      inkscape:window-width="1920"
      inkscape:window-height="1002"
      inkscape:window-x="-8"
@@ -942,7 +942,17 @@
          id="tspan26763"
          style="font-size:4.58611px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.132292"
          x="17.845592"
-         y="92.894661">32×32×3</tspan></text></g><style
+         y="92.894661">32×32×3</tspan></text><text
+       xml:space="preserve"
+       style="font-size:4.58611px;font-family:Calibri;-inkscape-font-specification:Calibri;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.132292;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+       x="34.778919"
+       y="24.63217"
+       id="text474"><tspan
+         sodipodi:role="line"
+         id="tspan472"
+         style="font-size:4.58611px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.132292"
+         x="34.778919"
+         y="24.63217">Input image</tspan></text></g><style
      type="text/css"
      id="style182">
 	.st0{fill:#E24B4B;}
